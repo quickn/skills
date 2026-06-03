@@ -43,6 +43,7 @@ Then in Claude Code:
 | **Grow Sustainably** | `/grow-sustainably` | Making decisions about spending, hiring, or scaling |
 | **Company Values** | `/company-values` | Defining culture, preparing to hire |
 | **Minimalist Review** | `/minimalist-review` | Gut-checking any business decision |
+| **JAR Sync to Linux** | `/jar-sync-to-linux` | Deploy JAR files to Linux server via SSH/SCP |
 
 ## The Minimalist Entrepreneur Journey
 
