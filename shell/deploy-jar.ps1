@@ -3,24 +3,36 @@
 #         - If no JAR found: show error
 #         - If multiple JARs: prompt user to select one
 #         - If single JAR: auto-select, use filename (without .jar) as container name
+#
+# Parameters:
+#   -u <username> : Remote server username (default: park)
+#   -h <hostname> : Remote server hostname/IP (default: 192.168.10.11)
+
+param(
+    [string]$User = "park",
+    [string]$Hostname = "192.168.10.11"
+)
 
 Write-Host "Searching for JAR files..." -ForegroundColor Cyan
-Write-Host "Current directory: $(Get-Location)" -ForegroundColor Gray
+Write-Host "Current directory: $( Get-Location )" -ForegroundColor Gray
 
-try {
+try
+{
     # Search for all JAR files in current directory and subdirectories, only from target directories
     $ALL_JARS = Get-ChildItem -Path "." -Filter "*.jar" -Recurse -ErrorAction Stop | Where-Object { $_.DirectoryName -match 'target' }
 
-    Write-Host "Total JAR files found: $($ALL_JARS.Count)" -ForegroundColor Gray
+    Write-Host "Total JAR files found: $( $ALL_JARS.Count )" -ForegroundColor Gray
 
-    if ($ALL_JARS.Count -gt 0) {
+    if ($ALL_JARS.Count -gt 0)
+    {
         Write-Host "JAR file locations:" -ForegroundColor Gray
-        $ALL_JARS | ForEach-Object { Write-Host "  - $($_.FullName)" -ForegroundColor Gray }
+        $ALL_JARS | ForEach-Object { Write-Host "  - $( $_.FullName )" -ForegroundColor Gray }
     }
 }
-catch {
+catch
+{
     Write-Host "ERROR during file search: $_" -ForegroundColor Red
-    Write-Host "Exception details: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "Exception details: $( $_.Exception.Message )" -ForegroundColor Red
     exit 1
 }
 
@@ -37,10 +49,10 @@ elseif ($ALL_JARS.Count -eq 1)
 }
 else
 {
-    Write-Host "Found $($ALL_JARS.Count) JAR files:" -ForegroundColor Yellow
+    Write-Host "Found $( $ALL_JARS.Count ) JAR files:" -ForegroundColor Yellow
     for ($i = 0; $i -lt $ALL_JARS.Count; $i++)
     {
-        Write-Host "  [$($i + 1)] $($ALL_JARS[$i].FullName)" -ForegroundColor White
+        Write-Host "  [$( $i + 1 )] $( $ALL_JARS[$i].FullName )" -ForegroundColor White
     }
 
     while ($true)
@@ -61,7 +73,7 @@ else
         }
         else
         {
-            Write-Host "Invalid selection. Please enter a number between 1 and $($ALL_JARS.Count)" -ForegroundColor Red
+            Write-Host "Invalid selection. Please enter a number between 1 and $( $ALL_JARS.Count )" -ForegroundColor Red
         }
     }
 }
@@ -73,9 +85,11 @@ $CONTAINER_NAME = [System.IO.Path]::GetFileNameWithoutExtension($JAR_PATH)
 
 Write-Host "Container name: $CONTAINER_NAME" -ForegroundColor Green
 
+$USER = $User
+$HOSTNAME = $Hostname
 
-$SERVER = "park@192.168.10.11"
-$REMOTE_DIR = "/home/park/docker/$CONTAINER_NAME"
+$SERVER = "$USER@$HOSTNAME"
+$REMOTE_DIR = "/home/$USER/docker/$CONTAINER_NAME"
 
 Write-Host "Starting deployment of $CONTAINER_NAME ..." -ForegroundColor Cyan
 
@@ -87,12 +101,29 @@ if (-Not (Test-Path $JAR_PATH))
 }
 Write-Host "OK: JAR file exists" -ForegroundColor Green
 
-# 2. Create remote directory and backup
-Write-Host "Creating directory and backup..." -ForegroundColor Yellow
-$BACKUP_CMD = "mkdir -p $REMOTE_DIR && cp $REMOTE_DIR/$CONTAINER_NAME.jar $REMOTE_DIR/$CONTAINER_NAME.jar.backup.`$(date +%Y%m%d%H%M%S) 2>/dev/null || true"
-ssh $SERVER $BACKUP_CMD
+# 2. Create remote directory
+Write-Host "Creating remote directory..." -ForegroundColor Yellow
+$MKDIR_CMD = "mkdir -p $REMOTE_DIR"
+ssh $SERVER $MKDIR_CMD
+if ($LASTEXITCODE -ne 0)
+{
+    Write-Host "ERROR: Failed to create remote directory" -ForegroundColor Red
+    exit 1
+}
+Write-Host "OK: Remote directory created" -ForegroundColor Green
 
-# 3. Transfer JAR file
+# 3. Backup existing JAR (optional)
+$IS_BACKUP = "false"
+
+if ($IS_BACKUP -eq "true")
+{
+    Write-Host "Backing up existing JAR file..." -ForegroundColor Yellow
+    $BACKUP_CMD = "cp $REMOTE_DIR/$CONTAINER_NAME.jar $REMOTE_DIR/$CONTAINER_NAME.jar.backup.`$(date +%Y%m%d%H%M%S) 2>/dev/null || true"
+    ssh $SERVER $BACKUP_CMD
+}
+
+
+# 4. Transfer JAR file
 Write-Host "Transferring JAR file..." -ForegroundColor Yellow
 scp -o StrictHostKeyChecking=no $JAR_PATH "${SERVER}:${REMOTE_DIR}/"
 if ($LASTEXITCODE -ne 0)
@@ -102,26 +133,26 @@ if ($LASTEXITCODE -ne 0)
 }
 Write-Host "OK: File transfer successful" -ForegroundColor Green
 
-# 4. Copy to container
+# 5. Copy to container
 Write-Host "Copying to Docker container..." -ForegroundColor Yellow
 $COPY_CMD = "docker cp ${REMOTE_DIR}/$CONTAINER_NAME.jar ${CONTAINER_NAME}:/home/park/$CONTAINER_NAME.jar"
 ssh $SERVER $COPY_CMD
 
-# 5. Restart container
+# 6. Restart container
 Write-Host "Restarting application..." -ForegroundColor Yellow
 $RESTART_CMD = "docker restart ${CONTAINER_NAME}"
 ssh $SERVER $RESTART_CMD
 
-# 6. Wait for application to start
+# 7. Wait for application to start
 Write-Host "Waiting for application to start..." -ForegroundColor Yellow
 Start-Sleep -Seconds 10
 
-# 7. Verify container status
+# 8. Verify container status
 Write-Host "Checking container status..." -ForegroundColor Yellow
 $STATUS_CMD = "docker ps | grep ${CONTAINER_NAME}"
 ssh $SERVER $STATUS_CMD
 
-# 8. View latest logs
+# 9. View latest logs
 Write-Host "Viewing application logs (last 10 lines)..." -ForegroundColor Yellow
 $LOGS_CMD = "docker logs --tail 10 ${CONTAINER_NAME}"
 ssh $SERVER $LOGS_CMD
